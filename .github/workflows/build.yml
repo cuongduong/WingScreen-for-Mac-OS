@@ -1,6 +1,8 @@
-# Build bộ cài + bản portable của WingScreen cho Windows.
-# Chạy: tab Actions -> "Build WingScreen for Windows" -> Run workflow, hoặc đẩy tag v2.1 (tự tạo Release).
-name: Build WingScreen for Windows
+# Build WingScreen.app (universal: Intel + Apple Silicon). Bản Windows nằm ở project WingScreen-Windows riêng.
+# Cách dùng: đẩy mã nguồn lên GitHub -> tab Actions -> "Build WingScreen" -> Run workflow.
+# Khi chạy xong, tải WingScreen-macOS.zip ở mục Artifacts.
+# Đẩy tag dạng v2.0 (git tag v2.0 && git push --tags) để tự tạo Release.
+name: Build WingScreen (macOS)
 
 on:
   workflow_dispatch:
@@ -8,30 +10,34 @@ on:
     tags: ["v*"]
 
 env:
+  # Khi build từ tag v2.1 -> phiên bản 2.1; nếu không thì lấy "version" trong about.json
   WINGSCREEN_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  macos:
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Cài / cập nhật Inno Setup
-        shell: pwsh
+      - name: Build universal app (Intel + Apple Silicon)
         run: |
-          # Bản dịch tiếng Việt cần Inno Setup 6.5 trở lên -> luôn cập nhật bản mới nhất
-          choco upgrade innosetup -y --no-progress
-      - name: Build
-        shell: cmd
-        run: build.bat
+          chmod +x build.sh
+          ./build.sh
+          ditto -c -k --keepParent dist/WingScreen.app dist/WingScreen-macOS.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: WingScreen-Windows
-          path: dist/*.exe
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+          name: WingScreen-macOS
+          path: dist/WingScreen-macOS.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: dist/*.exe
+          path: out
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/**/*.zip
