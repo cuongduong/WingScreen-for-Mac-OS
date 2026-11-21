@@ -18,12 +18,28 @@ final class Client {
     private var probe: FramedConnection?
     private var probeTimer: DispatchSourceTimer?
     private var gotVideo = false
+    /// Máy chính đã dừng chia sẻ: giữ thông báo, chờ máy chính bật lại (Bonjour tự tìm thấy)
+    private var hostPaused = false
 
     /// Lần thử cáp đầu tiên sau khi kết nối Wi‑Fi, và khoảng cách giữa các lần thử sau đó (giây)
     private let firstProbeDelay = 3
     private let probeInterval = 10
 
-    var onStatus: ((String) -> Void)?
+    private var statusHandler: ((String) -> Void)?
+    /// Đặt từ bên ngoài; khi máy chính đang dừng chia sẻ, mọi trạng thái "đang tìm/đang kết nối" được thay bằng thông báo dừng
+    var onStatus: ((String) -> Void)? {
+        get { { [weak self] text in self?.report(text) } }
+        set { statusHandler = newValue }
+    }
+
+    private func report(_ text: String) {
+        statusHandler?(hostPaused ? pausedMessage : text)
+    }
+
+    private var pausedMessage: String {
+        tr("Máy chính đã dừng chia sẻ màn hình.\nMàn hình phụ sẽ tự hiện lại khi máy chính bật chia sẻ.",
+           "The main computer stopped sharing.\nThis display will come back when sharing is turned on again.")
+    }
     var onConnectedVideo: (() -> Void)?
 
     init(hello: Hello, manualHost: String?, sink: VideoSink) {
@@ -174,7 +190,13 @@ final class Client {
 
     private func handle(_ type: MsgType, _ data: Data) {
         switch type {
+        case .paused:
+            wsLog(tr("Máy chính đã dừng chia sẻ", "The main computer stopped sharing"))
+            hostPaused = true
+            sink.reset()
+            report("")
         case .format:
+            hostPaused = false                       // máy chính đã bật chia sẻ lại
             if let ps = ParameterSets(data: data) { sink.setFormat(ps) }
         case .frame:
             sink.enqueue(data)

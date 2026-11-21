@@ -80,6 +80,7 @@ To set the version at build time, run `WINGSCREEN_VERSION=2.1 ./build.sh`.
 ### Menu bar options (main computer)
 | Option | Values |
 |---|---|
+| ⏸ Stop sharing / ▶︎ Resume sharing | Stops streaming, removes the virtual display and stops accepting connections until you resume. Clicking macOS's own **Stop Sharing** in the menu bar does the same. |
 | Video resolution | Auto (match receiver) · 2x · 1.5x · 1x |
 | Bitrate | 10 – 80 Mbps. Use about 20 on Wi‑Fi and 50–80 on a cable. |
 | Frame rate | 30 / 60 fps |

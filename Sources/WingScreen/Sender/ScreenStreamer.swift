@@ -24,6 +24,9 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     private var pendingDrop = false               // có khung bị bỏ do mạng chậm
     private var timer: DispatchSourceTimer?
 
+    /// Gọi khi người dùng bấm "Stop Sharing" của macOS
+    var onUserStopped: (() -> Void)?
+
     /// Số gói tối đa cho phép đang chờ gửi trước khi bỏ khung hình
     private let maxInFlight = 3
 
@@ -101,7 +104,13 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        print(tr("[WingScreen] Luồng quay dừng: \(error.localizedDescription)", "[WingScreen] Capture stream stopped: \(error.localizedDescription)"))
+        if let e = error as? SCStreamError, e.code == .userStopped {
+            // Người dùng bấm "Stop Sharing" trên thanh menu của macOS -> dừng chia sẻ hẳn
+            wsLog(tr("Người dùng đã bấm Stop Sharing", "User pressed Stop Sharing"))
+            onUserStopped?()
+            return
+        }
+        wsLog(tr("[WingScreen] Luồng quay dừng: \(error.localizedDescription)", "[WingScreen] Capture stream stopped: \(error.localizedDescription)"))
         conn.cancel()
     }
 

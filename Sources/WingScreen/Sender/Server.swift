@@ -10,6 +10,10 @@ final class Server {
     private var listener: NWListener?
     private var session: Session?
     private let park = ScreenPark()
+    /// Đang dừng chia sẻ: không nhận kết nối, không quảng bá Bonjour (chỉ truy cập trên queue)
+    private var paused = false
+    /// Báo giao diện khi trạng thái dừng/tiếp tục thay đổi (gọi trên main thread)
+    var onPausedChanged: ((Bool) -> Void)?
 
     init(config: SenderConfig, status: @escaping (String) -> Void) {
         self.config = config
@@ -18,7 +22,9 @@ final class Server {
 
     func start() {
         do {
-            let listener = try NWListener(using: makeTCPParameters(), on: NWEndpoint.Port(rawValue: config.port)!)
+            let params = makeTCPParameters()
+            params.allowLocalEndpointReuse = true          // mở lại cổng ngay khi tiếp tục chia sẻ
+            let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: config.port)!)
             listener.service = NWListener.Service(name: Host.current().localizedName ?? "WingScreen", type: kServiceType)
             listener.newConnectionHandler = { [weak self] conn in self?.accept(conn) }
             listener.stateUpdateHandler = { [weak self] state in
@@ -32,6 +38,37 @@ final class Server {
             self.listener = listener
         } catch {
             status(tr("Không mở được cổng \(config.port): \(error.localizedDescription)", "Couldn't open port \(config.port): \(error.localizedDescription)"))
+        }
+    }
+
+    /// Dừng chia sẻ: báo máy phụ, ngắt kết nối, gỡ màn hình ảo, ngừng nhận kết nối mới.
+    /// Chỉ bật lại khi người dùng chọn "Tiếp tục chia sẻ" (resume()).
+    func pause(byUser: Bool = false) {
+        queue.async {
+            guard !self.paused else { return }
+            self.paused = true
+            self.listener?.cancel()
+            self.listener = nil
+            self.pending?.cancel()
+            self.pending = nil
+            self.session?.endSharing()
+            DispatchQueue.main.async { self.park.clear() }
+            self.status(byUser
+                ? tr("Đã dừng chia sẻ (Stop Sharing). Chọn “Tiếp tục chia sẻ” để bật lại.",
+                     "Sharing stopped (Stop Sharing). Choose “Resume sharing” to turn it back on.")
+                : tr("Đã dừng chia sẻ. Chọn “Tiếp tục chia sẻ” để bật lại.",
+                     "Sharing stopped. Choose “Resume sharing” to turn it back on."))
+            DispatchQueue.main.async { self.onPausedChanged?(true) }
+        }
+    }
+
+    /// Tiếp tục chia sẻ: mở lại cổng + Bonjour, máy phụ sẽ tự kết nối.
+    func resume() {
+        queue.async {
+            guard self.paused else { return }
+            self.paused = false
+            self.start()
+            DispatchQueue.main.async { self.onPausedChanged?(false) }
         }
     }
 
@@ -50,6 +87,10 @@ final class Server {
 
     private func accept(_ conn: NWConnection) {
         wsLog(tr("Kết nối đến từ \(conn.endpoint)", "Incoming connection from \(conn.endpoint)"))
+        if paused {
+            conn.cancel()
+            return
+        }
         if let current = session {
             // Thường là máy phụ nối lại sau khi mạng chập: bỏ phiên cũ, phục vụ kết nối mới
             // ngay khi màn hình ảo cũ đã gỡ xong (tránh 2 màn hình ảo trùng nhau).
@@ -64,11 +105,15 @@ final class Server {
     private func startSession(_ conn: NWConnection) {
         let framed = FramedConnection(connection: conn, queue: queue)
         let s = Session(connection: framed, config: config, queue: queue, park: park, status: status)
+        s.onUserStopped = { [weak self] in self?.pause(byUser: true) }
         s.onEnd = { [weak self] in
             self?.queue.async {
                 guard let self else { return }
                 self.session = nil
-                if let next = self.pending {
+                if self.paused {
+                    self.pending?.cancel()
+                    self.pending = nil
+                } else if let next = self.pending {
                     self.pending = nil
                     self.startSession(next)
                 } else {
@@ -88,6 +133,10 @@ final class Session {
     private let queue: DispatchQueue
     private let status: (String) -> Void
     var onEnd: (() -> Void)?
+    /// Người dùng bấm "Stop Sharing" của macOS
+    var onUserStopped: (() -> Void)?
+    /// Dừng chia sẻ: gỡ màn hình ảo ngay thay vì giữ lại chờ nối lại (chỉ truy cập trên queue)
+    private var dropScreen = false
 
     private var screen: VirtualScreen?       // chỉ truy cập trên main thread
     private var screenKey = ""               // chỉ truy cập trên main thread
@@ -118,6 +167,13 @@ final class Session {
 
     func disconnect() {
         conn.cancel()
+    }
+
+    /// Báo máy phụ là máy chính đã dừng chia sẻ rồi ngắt kết nối (gọi trên queue)
+    func endSharing() {
+        dropScreen = true
+        conn.send(.paused)
+        queue.asyncAfter(deadline: .now() + 0.3) { self.conn.cancel() }   // chờ gói tin kịp gửi đi
     }
 
     private func handle(_ type: MsgType, _ data: Data) {
@@ -182,6 +238,7 @@ final class Session {
         status(text)
 
         let streamer = ScreenStreamer(displayID: vs.displayID, width: pw, height: ph, config: config, connection: conn)
+        streamer.onUserStopped = { [weak self] in self?.onUserStopped?() }
         let injector = InputInjector(displayID: vs.displayID)
         queue.async {
             self.streamer = streamer
@@ -211,11 +268,13 @@ final class Session {
         injector = nil
         let s = streamer
         streamer = nil
+        let drop = dropScreen
         Task {
             await s?.stop()
             await MainActor.run {
-                // Chưa gỡ ngay: giữ màn hình ảo vài giây phòng khi máy phụ nối lại
-                if let screen = self.screen { self.park.park(screen, key: self.screenKey) }
+                // Mất kết nối thường: giữ màn hình ảo vài giây phòng khi máy phụ nối lại.
+                // Dừng chia sẻ: gỡ luôn.
+                if !drop, let screen = self.screen { self.park.park(screen, key: self.screenKey) }
                 self.screen = nil
             }
             self.onEnd?()
@@ -240,6 +299,11 @@ final class ScreenPark {
             self.parked = nil                       // giải phóng -> màn hình ảo biến mất
             wsLog(tr("Đã gỡ màn hình ảo (máy phụ không nối lại)", "Removed the virtual display (the extra display didn't reconnect)"))
         }
+    }
+
+    /// Gỡ ngay màn hình đang giữ (khi dừng chia sẻ)
+    func clear() {
+        parked = nil
     }
 
     /// Lấy màn hình đang giữ nếu khớp; không khớp thì gỡ nó đi để tạo màn hình mới.

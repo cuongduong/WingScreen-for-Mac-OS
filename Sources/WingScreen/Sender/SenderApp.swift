@@ -63,6 +63,7 @@ final class SenderController: NSObject, ModeController, NSMenuDelegate {
     private var config: SenderConfig
     private var statusItem: NSStatusItem!
     private var statusText = tr("Đang khởi động…", "Starting…")
+    private var sharingPaused = false
     private var server: Server!
 
     override init() {
@@ -88,6 +89,11 @@ final class SenderController: NSObject, ModeController, NSMenuDelegate {
             DispatchQueue.main.async { self?.statusText = text }
             wsLog(tr("[Máy chính] \(text)", "[Main] \(text)"))
         }
+        server.onPausedChanged = { [weak self] paused in
+            guard let self else { return }
+            self.sharingPaused = paused
+            self.statusItem.button?.appearsDisabled = paused     // biểu tượng mờ khi đang dừng chia sẻ
+        }
         server.start()
     }
 
@@ -109,6 +115,11 @@ final class SenderController: NSObject, ModeController, NSMenuDelegate {
         menu.removeAllItems()
 
         menu.addItem(disabled(statusText))
+        if sharingPaused {
+            menu.addItem(item(tr("▶︎ Tiếp tục chia sẻ", "▶︎ Resume sharing"), checked: false, action: #selector(toggleSharing)))
+        } else {
+            menu.addItem(item(tr("⏸ Dừng chia sẻ", "⏸ Stop sharing"), checked: false, action: #selector(toggleSharing)))
+        }
         menu.addItem(.separator())
 
         // Độ phân giải luồng video
@@ -258,6 +269,14 @@ final class SenderController: NSObject, ModeController, NSMenuDelegate {
                     "x-apple.systempreferences:com.apple.preference.displays"]          // macOS 12
         for s in urls {
             if let url = URL(string: s), NSWorkspace.shared.open(url) { return }
+        }
+    }
+
+    @objc private func toggleSharing() {
+        if sharingPaused {
+            server.resume()
+        } else {
+            server.pause()
         }
     }
 

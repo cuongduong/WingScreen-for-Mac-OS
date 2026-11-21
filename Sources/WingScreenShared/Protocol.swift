@@ -14,6 +14,7 @@ public enum MsgType: UInt8 {
     case frame = 3            // Sender -> Receiver: [1 byte keyframe][dữ liệu AVCC]
     case input = 4            // Receiver -> Sender: sự kiện chuột/bàn phím (JSON InputEvent)
     case requestKeyframe = 5  // Receiver -> Sender: xin keyframe khi giải mã lỗi
+    case paused = 6           // Sender -> Receiver: máy chính dừng chia sẻ (đừng nối lại cho tới khi bật lại)
 }
 
 public struct Hello: Codable {

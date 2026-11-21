@@ -47,6 +47,7 @@ Máy chính ←── giả lập chuột/phím ←─────────�
 - Khi mạng chập hoặc chuyển đường, máy chính giữ lại màn hình ảo 15 giây nên cửa sổ không bị dồn về màn hình chính.
 
 ### Máy chính là Mac
+- **Dừng chia sẻ:** menu ▭▭ → **⏸ Dừng chia sẻ** (hoặc bấm **Stop Sharing** của macOS trên thanh menu). Màn hình ảo được gỡ, máy phụ hiện thông báo và **không tự nối lại** cho tới khi bạn chọn **▶︎ Tiếp tục chia sẻ**.
 - Cấp quyền trong *System Settings → Privacy & Security*: **Screen & System Audio Recording** và **Accessibility** → bật WingScreen → thoát và mở lại app (hoặc khởi động lại máy).
 - Chỉnh độ phân giải, bitrate, fps, HEVC, khởi động cùng máy trong menu ▭▭ trên thanh menu.
 
