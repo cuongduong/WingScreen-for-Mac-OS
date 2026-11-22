@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import CGVirtualDisplayKit
+import WingScreenShared
 
 /// Màn hình ảo trên máy chính, giả lập đúng kích thước màn hình MacBook Pro 16" 2019.
 final class VirtualScreen {
@@ -30,6 +31,34 @@ final class VirtualScreen {
         self.pointWidth = pointWidth
         self.pointHeight = pointHeight
         self.hiDPI = hiDPI
+    }
+
+    /// Bảo đảm màn hình ảo là màn hình MỞ RỘNG, không nằm trong nhóm phát trùng (mirror).
+    /// macOS (thấy rõ trên macOS 12) có thể tự đặt màn hình mới ở chế độ "Mirror Built-in Display";
+    /// khi đó không quay được hình riêng và máy phụ đứng ở "đang chờ hình ảnh".
+    /// Trả về true nếu đã phải đổi cấu hình màn hình.
+    @discardableResult
+    func ensureExtended() -> Bool {
+        guard CGDisplayIsInMirrorSet(displayID) != 0 else { return false }
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(0, nil, &count)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetOnlineDisplayList(count, &ids, &count)
+
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success, let config else { return false }
+        for id in ids.prefix(Int(count)) {
+            let master = CGDisplayMirrorsDisplay(id)
+            // màn hình ảo đang phát trùng màn hình khác, hoặc màn hình khác đang phát trùng màn hình ảo
+            if (id == displayID && master != kCGNullDirectDisplay) || master == displayID {
+                CGConfigureDisplayMirrorOfDisplay(config, id, kCGNullDirectDisplay)
+            }
+        }
+        let err = CGCompleteDisplayConfiguration(config, .forSession)
+        wsLog(err == .success
+              ? tr("Màn hình ảo đang ở chế độ phát trùng (Mirror) — đã chuyển sang mở rộng", "The virtual display was mirrored — switched it to extended")
+              : tr("Màn hình ảo đang ở chế độ phát trùng, không chuyển được: \(err.rawValue)", "The virtual display is mirrored and couldn't be switched: \(err.rawValue)"))
+        return err == .success
     }
 
     /// Chọn chế độ hiển thị có đúng kích thước point mong muốn (ưu tiên HiDPI).

@@ -200,6 +200,13 @@ public final class FramedConnection {
     private var viable = true
     private let lock = NSLock()
     private var _inFlight = 0
+    private var sealed = false
+
+    /// Gửi gói cuối cùng (ví dụ "đã dừng chia sẻ"); mọi lệnh send() sau đó bị bỏ qua,
+    /// để không còn khung hình nào tới máy phụ sau thông báo dừng.
+    public func sendFinal(_ type: MsgType, sent: (() -> Void)? = nil) {
+        send(type, sent: sent, final: true)
+    }
 
     /// Số gói đang chờ gửi (dùng để bỏ khung hình khi mạng chậm)
     public var inFlight: Int {
@@ -262,16 +269,26 @@ public final class FramedConnection {
         onClose?(error)
     }
 
-    public func send(_ type: MsgType, _ payload: Data = Data()) {
+    /// `sent`: gọi (trên queue của kết nối) khi gói tin đã được chuyển xuống hệ thống để gửi đi
+    public func send(_ type: MsgType, _ payload: Data = Data(), sent: (() -> Void)? = nil) {
+        send(type, payload, sent: sent, final: false)
+    }
+
+    private func send(_ type: MsgType, _ payload: Data = Data(), sent: (() -> Void)?, final: Bool) {
         var packet = Data(bigEndian32(payload.count))
         packet.append(type.rawValue)
         packet.append(payload)
 
-        lock.lock(); _inFlight += 1; lock.unlock()
+        lock.lock()
+        if sealed { lock.unlock(); return }
+        if final { sealed = true }
+        _inFlight += 1
+        lock.unlock()
         connection.send(content: packet, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
             self.lock.lock(); self._inFlight -= 1; self.lock.unlock()
             if let error { self.queue.async { self.finish(error) } }
+            if let sent { self.queue.async { sent() } }
         })
     }
 

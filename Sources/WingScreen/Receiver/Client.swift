@@ -193,7 +193,7 @@ final class Client {
         case .paused:
             wsLog(tr("Máy chính đã dừng chia sẻ", "The main computer stopped sharing"))
             hostPaused = true
-            sink.reset()
+            sink.reset(clearImage: true)             // xoá khung hình cuối để thông báo hiện trên nền đen
             report("")
         case .format:
             hostPaused = false                       // máy chính đã bật chia sẻ lại
@@ -211,6 +211,12 @@ final class Client {
 
     func sendInput(_ event: InputEvent) {
         let payload = encodeJSON(event)
-        queue.async { self.conn?.send(.input, payload) }
+        // Chỉ điều khiển máy chính khi đã thấy hình. Trước đây chuột/phím được gửi ngay khi vừa kết nối:
+        // nếu máy chính chưa phát được hình, con trỏ của máy chính bị kéo sang màn hình ảo (không nhìn thấy)
+        // và người dùng ở máy chính tưởng máy bị treo cho tới khi máy phụ thoát.
+        queue.async {
+            guard self.gotVideo, !self.hostPaused else { return }
+            self.conn?.send(.input, payload)
+        }
     }
 }

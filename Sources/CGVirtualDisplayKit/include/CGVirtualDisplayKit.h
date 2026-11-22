@@ -25,3 +25,23 @@ NSObject *_Nullable WSCreateVirtualDisplay(NSString *name,
 CGDirectDisplayID WSVirtualDisplayGetID(NSObject *display);
 
 NS_ASSUME_NONNULL_END
+
+// ---------------------------------------------------------------------------
+// Quay màn hình bằng CGDisplayStream (API cũ, có từ macOS 10.8).
+// Dùng cho máy cũ (macOS 12) khi ScreenCaptureKit không gửi khung hình nào từ màn hình ảo.
+// Các hàm được tra cứu lúc chạy (dlsym) nên không phụ thuộc chú thích "deprecated" của SDK mới.
+// ---------------------------------------------------------------------------
+#import <IOSurface/IOSurfaceRef.h>
+
+NS_ASSUME_NONNULL_BEGIN
+
+typedef void (^WSDisplayFrameHandler)(IOSurfaceRef surface);
+
+/// Bắt đầu quay `display`, xuất khung NV12 kích thước width×height. Trả về nil nếu lỗi.
+/// Giữ đối tượng trả về; gọi WSStopDisplayStream để dừng.
+NSObject *_Nullable WSStartDisplayStream(CGDirectDisplayID display, size_t width, size_t height,
+                                         double fps, dispatch_queue_t queue, WSDisplayFrameHandler handler);
+
+void WSStopDisplayStream(NSObject *stream);
+
+NS_ASSUME_NONNULL_END

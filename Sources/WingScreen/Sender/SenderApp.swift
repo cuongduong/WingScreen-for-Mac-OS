@@ -13,8 +13,33 @@ struct SenderConfig {
     var hevc = false
     var scale: Double? = nil      // nil = tự động theo máy phụ
     var port = kDefaultPort
+    /// Chế độ tương thích cho máy cũ: 0 = tự động, 1 = bật, 2 = tắt
+    var compat = 0
 
     private static let defaults = UserDefaults.standard
+
+    /// Mac Intel chạy macOS 12 trở xuống (ví dụ MacBook Pro 2015): màn hình ảo HiDPI + bộ nén độ trễ thấp
+    /// có thể làm treo cả máy, nên mặc định dùng chế độ tương thích.
+    static var isOldIntelMac: Bool {
+        #if arch(x86_64)
+        return ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 13
+        #else
+        return false
+        #endif
+    }
+
+    /// Đang dùng chế độ tương thích (màn hình ảo 1x, tối đa 30 fps, không HEVC, bộ nén thường)
+    var useCompat: Bool { compat == 1 || (compat == 0 && SenderConfig.isOldIntelMac) }
+
+    /// Cấu hình thực tế cho một phiên kết nối (đã áp dụng chế độ tương thích)
+    func effective() -> SenderConfig {
+        guard useCompat else { return self }
+        var c = self
+        c.fps = min(fps, 30)
+        c.hevc = false
+        c.scale = 1.0
+        return c
+    }
 
     static func load() -> SenderConfig {
         let d = defaults
@@ -25,6 +50,7 @@ struct SenderConfig {
         let s = d.double(forKey: "scale")
         c.scale = s > 0 ? s : nil
         if d.object(forKey: "port") != nil, let p = UInt16(exactly: d.integer(forKey: "port")), p > 0 { c.port = p }
+        c.compat = d.integer(forKey: "compat")
         return c
     }
 
@@ -35,6 +61,7 @@ struct SenderConfig {
         d.set(hevc, forKey: "hevc")
         d.set(scale ?? 0, forKey: "scale")
         d.set(Int(port), forKey: "port")
+        d.set(compat, forKey: "compat")
     }
 
     /// Áp dụng tham số dòng lệnh. Trả về true nếu có tham số nào.
@@ -158,6 +185,19 @@ final class SenderController: NSObject, ModeController, NSMenuDelegate {
 
         menu.addItem(item(tr("Dùng HEVC (H.265) — nét hơn ở cùng bitrate", "Use HEVC (H.265) — sharper at the same bitrate"), checked: config.hevc, action: #selector(toggleHEVC)))
 
+        // Chế độ tương thích cho máy cũ
+        let compatMenu = NSMenu()
+        let autoState = SenderConfig.isOldIntelMac ? tr("đang bật trên máy này", "on for this Mac") : tr("đang tắt trên máy này", "off for this Mac")
+        let compatChoices: [(Int, String)] = [
+            (0, tr("Tự động (\(autoState))", "Automatic (\(autoState))")),
+            (1, tr("Bật — màn hình ảo 1x, tối đa 30 fps", "On — 1x virtual display, up to 30 fps")),
+            (2, tr("Tắt", "Off")),
+        ]
+        for (value, title) in compatChoices {
+            compatMenu.addItem(item(title, checked: config.compat == value, action: #selector(setCompat(_:)), value: value))
+        }
+        menu.addItem(submenu(tr("Chế độ tương thích máy cũ", "Compatibility mode for older Macs") + (config.useCompat ? tr(" (bật)", " (on)") : ""), compatMenu))
+
         menu.addItem(.separator())
 
         // Khởi động cùng máy (macOS 13+)
@@ -227,6 +267,12 @@ final class SenderController: NSObject, ModeController, NSMenuDelegate {
     @objc private func setFPS(_ sender: NSMenuItem) {
         guard let v = sender.representedObject as? Int else { return }
         config.fps = v
+        applyConfig()
+    }
+
+    @objc private func setCompat(_ sender: NSMenuItem) {
+        guard let v = sender.representedObject as? Int else { return }
+        config.compat = v
         applyConfig()
     }
 
@@ -302,12 +348,12 @@ final class SenderController: NSObject, ModeController, NSMenuDelegate {
         // Quyền Trợ năng: để điều khiển chuột/bàn phím từ máy phụ
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         if !AXIsProcessTrustedWithOptions(opts) {
-            print(tr("[WingScreen] Cần cấp quyền Trợ năng (Accessibility) để điều khiển từ máy phụ.", "[WingScreen] Accessibility permission is needed to control this Mac from the extra display."))
+            wsLog(tr("Cần cấp quyền Trợ năng (Accessibility) để điều khiển từ máy phụ.", "Accessibility permission is needed to control this Mac from the extra display."))
         }
         // Quyền Ghi màn hình: để quay màn hình ảo
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
-            print(tr("[WingScreen] Cần cấp quyền Ghi màn hình (Screen Recording), sau đó mở lại app.", "[WingScreen] Screen Recording permission is needed — grant it, then reopen the app."))
+            wsLog(tr("Cần cấp quyền Ghi màn hình (Screen Recording), sau đó mở lại app.", "Screen Recording permission is needed — grant it, then reopen the app."))
         }
     }
 }

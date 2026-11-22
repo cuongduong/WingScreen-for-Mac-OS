@@ -17,7 +17,7 @@ let package = Package(
         .target(
             name: "CGVirtualDisplayKit",
             cSettings: [.unsafeFlags(["-fobjc-arc"])],
-            linkerSettings: [.linkedFramework("CoreGraphics"), .linkedFramework("Foundation")]
+            linkerSettings: [.linkedFramework("CoreGraphics"), .linkedFramework("Foundation"), .linkedFramework("IOSurface")]
         ),
         // Giao thức mạng + gói tin dùng chung
         .target(

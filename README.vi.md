@@ -11,6 +11,8 @@ Một mã nguồn, hai bản cài đặt. Mỗi bản có **cả hai vai trò**,
 
 Mọi cặp đều dùng được: Mac → Mac, Mac → Windows, Windows → Mac, Windows → Windows.
 
+> Máy chính chạy Windows chỉ **mở rộng** màn hình khi có driver màn hình ảo chạy được hoặc có màn hình thứ hai; nếu không thì máy phụ **phát trùng** (Mirror). Chi tiết xem [README bản Windows](https://github.com/cuongduong/WingScreen-for-Windows/blob/main/README.vi.md#máy-chính-windows-mở-rộng-hay-phát-trùng).
+
 ```
 Máy chính ──[màn hình ảo]→ quay → nén H.264/HEVC ──TCP──→ giải mã → toàn màn hình ── Màn hình phụ
 Máy chính ←── giả lập chuột/phím ←───────────────── TCP ←── chuột, trackpad, bàn phím ── Màn hình phụ
@@ -50,6 +52,7 @@ Máy chính ←── giả lập chuột/phím ←─────────�
 - **Dừng chia sẻ:** menu ▭▭ → **⏸ Dừng chia sẻ** (hoặc bấm **Stop Sharing** của macOS trên thanh menu). Màn hình ảo được gỡ, máy phụ hiện thông báo và **không tự nối lại** cho tới khi bạn chọn **▶︎ Tiếp tục chia sẻ**.
 - Cấp quyền trong *System Settings → Privacy & Security*: **Screen & System Audio Recording** và **Accessibility** → bật WingScreen → thoát và mở lại app (hoặc khởi động lại máy).
 - Chỉnh độ phân giải, bitrate, fps, HEVC, khởi động cùng máy trong menu ▭▭ trên thanh menu.
+- **Chế độ tương thích máy cũ** (menu ▭▭): *Tự động* bật trên Mac Intel chạy macOS 12 trở xuống (ví dụ MacBook Pro 2015). Dùng màn hình ảo 1x, tối đa 30 fps, bộ nén thường và quay bằng CGDisplayStream — trên macOS 12, ScreenCaptureKit có thể không trả hình từ màn hình ảo khiến máy phụ đứng ở "đang chờ hình ảnh".
 
 ### Máy chính là Windows
 - **Nên cài Parsec Virtual Display Driver** (miễn phí) để có màn hình ảo riêng, đúng kích thước máy phụ:

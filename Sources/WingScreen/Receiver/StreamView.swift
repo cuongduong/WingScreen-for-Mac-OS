@@ -10,12 +10,23 @@ protocol FrameRenderer: AnyObject {
     var requiresFlushToResumeDecoding: Bool { get }
     func enqueue(_ sampleBuffer: CMSampleBuffer)
     func flush()
+    /// Xoá cả khung hình đang hiển thị (màn hình về đen)
+    func flushRemovingImage()
 }
 
-extension AVSampleBufferDisplayLayer: FrameRenderer {}
+extension AVSampleBufferDisplayLayer: FrameRenderer {
+    func flushRemovingImage() { flushAndRemoveImage() }
+}
 
 @available(macOS 14.0, *)
-extension AVSampleBufferVideoRenderer: FrameRenderer {}
+extension AVSampleBufferVideoRenderer: FrameRenderer {
+    func flushRemovingImage() { flush(removingDisplayedImage: true, completionHandler: nil) }
+}
+
+/// View chứa lớp video; không nhận chuột để sự kiện về thẳng StreamView
+private final class PassthroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
 
 /// Đưa khung hình nén vào bộ hiển thị (giải mã phần cứng).
 final class VideoSink {
@@ -38,9 +49,10 @@ final class VideoSink {
         onVideoSize?(CGSize(width: Int(dims.width), height: Int(dims.height)))
     }
 
-    func reset() {
+    /// clearImage = true: xoá luôn khung hình cuối (khi máy chính dừng chia sẻ)
+    func reset(clearImage: Bool = false) {
         lock.lock(); format = nil; waitingForKey = true; lock.unlock()
-        renderer.flush()
+        if clearImage { renderer.flushRemovingImage() } else { renderer.flush() }
     }
 
     func enqueue(_ payload: Data) {
@@ -109,15 +121,18 @@ final class StreamView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        layer = CALayer()
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
 
+        // Video nằm trong một subview riêng, thông báo là subview thêm sau -> luôn nằm TRÊN hình video
+        // (trước đây lớp video gắn thẳng vào layer của view nên thông báo có thể bị khung hình cuối che mất)
         displayLayer.videoGravity = .resizeAspect
-        displayLayer.frame = bounds
-        displayLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         displayLayer.backgroundColor = NSColor.black.cgColor
-        layer?.addSublayer(displayLayer)
+        let videoView = PassthroughView(frame: bounds)
+        videoView.layer = displayLayer
+        videoView.wantsLayer = true
+        videoView.autoresizingMask = [.width, .height]
+        addSubview(videoView)
 
         if #available(macOS 14.0, *) {
             sink = VideoSink(renderer: displayLayer.sampleBufferRenderer)
@@ -132,6 +147,8 @@ final class StreamView: NSView {
         statusLabel.font = .systemFont(ofSize: 22, weight: .medium)
         statusLabel.alignment = .center
         statusLabel.maximumNumberOfLines = 0
+        statusLabel.drawsBackground = true
+        statusLabel.backgroundColor = NSColor.black.withAlphaComponent(0.65)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(statusLabel)
         NSLayoutConstraint.activate([

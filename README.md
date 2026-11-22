@@ -20,9 +20,11 @@ WingScreen gives your main computer a **real extra display**. The screen of a se
 | | Mac (receiver) | Windows (receiver) |
 |---|:---:|:---:|
 | **Mac (main)** | ✅ | ✅ |
-| **Windows (main)** | ✅ | ✅ |
+| **Windows (main)** | ✅ ¹ | ✅ ¹ |
 
-This repository contains the **macOS app**. The Windows app lives in the companion repository **[WingScreen-Windows](https://github.com/YOUR-ACCOUNT/WingScreen-Windows)**. Both apps speak the same protocol.
+¹ A Windows main computer extends its desktop only when it has a working virtual display driver or a second monitor; otherwise it mirrors. Details are in the [Windows README](https://github.com/cuongduong/WingScreen-for-Windows#main-computer-on-windows-extend-or-mirror).
+
+This repository contains the **macOS app**. The Windows app lives in the companion repository **[WingScreen-Windows](https://github.com/cuongduong/WingScreen-for-Windows)**. Both apps speak the same protocol.
 
 ## Features
 - **A true extended display, not a mirror.** The main Mac gets a new virtual monitor that appears in *System Settings → Displays*. You can arrange it, drag windows onto it, run apps full-screen on it, and give it its own menu bar and Spaces.
@@ -85,6 +87,7 @@ To set the version at build time, run `WINGSCREEN_VERSION=2.1 ./build.sh`.
 | Bitrate | 10 – 80 Mbps. Use about 20 on Wi‑Fi and 50–80 on a cable. |
 | Frame rate | 30 / 60 fps |
 | HEVC | Sharper at the same bitrate |
+| Compatibility mode for older Macs | Automatic (on for Intel Macs running macOS 12 or earlier) · On · Off. Uses a 1x virtual display, up to 30 fps, a standard encoder and CGDisplayStream capture. |
 | Launch at login | macOS 13+ |
 
 Changing a setting while connected reconnects automatically in about 2 seconds.
@@ -120,6 +123,7 @@ The interface is available in **English** and **Vietnamese**. By default it foll
 | "The application can't be opened" | Run `xattr -cr` on the app, then `chmod +x WingScreen.app/Contents/MacOS/WingScreen`. |
 | Laggy on Wi‑Fi | Lower **Bitrate** to 20 Mbps and **Resolution** to 1.5x. Use 5 GHz Wi‑Fi, or better, a Thunderbolt cable. |
 | Cable plugged in but still on Wi‑Fi | Check *Network → Thunderbolt Bridge* shows **Connected**. If it doesn't, the cable isn't Thunderbolt/USB4. |
+| Extra display stays on "waiting for video" with an older Mac as the main computer | Keep **Compatibility mode** on *Automatic* or *On*. On macOS 12, ScreenCaptureKit may deliver no frames from the virtual display; WingScreen then captures with CGDisplayStream. |
 | Two displays appear for the same Mac | You also started **AirPlay** to that Mac. Disconnect it in Control Center → Screen Mirroring. |
 
 Logs are written to `~/Library/Logs/WingScreen.log`. On the main Mac, you can also open them from the menu bar: **Open log…**

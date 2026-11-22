@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Network
 import WingScreenShared
@@ -153,7 +154,7 @@ final class Session {
     init(connection: FramedConnection, config: SenderConfig, queue: DispatchQueue, park: ScreenPark,
          status: @escaping (String) -> Void) {
         self.conn = connection
-        self.config = config
+        self.config = config.effective()     // áp dụng chế độ tương thích máy cũ (nếu có)
         self.queue = queue
         self.park = park
         self.status = status
@@ -172,8 +173,12 @@ final class Session {
     /// Báo máy phụ là máy chính đã dừng chia sẻ rồi ngắt kết nối (gọi trên queue)
     func endSharing() {
         dropScreen = true
-        conn.send(.paused)
-        queue.asyncAfter(deadline: .now() + 0.3) { self.conn.cancel() }   // chờ gói tin kịp gửi đi
+        // Chỉ ngắt sau khi gói "đã dừng" thực sự được gửi đi (trước đây ngắt cứng sau 0.3 giây:
+        // nếu còn nhiều khung hình đang chờ gửi thì gói này bị bỏ, máy phụ không hiện thông báo)
+        conn.sendFinal(.paused, sent: { [weak self] in
+            self?.queue.asyncAfter(deadline: .now() + 0.2) { self?.conn.cancel() }
+        })
+        queue.asyncAfter(deadline: .now() + 3) { [weak self] in self?.conn.cancel() }   // dự phòng
     }
 
     private func handle(_ type: MsgType, _ data: Data) {
@@ -197,7 +202,12 @@ final class Session {
 
         // Màn hình ảo dùng HiDPI khi máy phụ có scale > 1 (Retina 2x, hoặc Windows 125%/150%/200%),
         // còn "scale" chỉ quyết định độ phân giải luồng video.
-        let hiDPI = hello.scale > 1.01
+        // Chế độ tương thích (máy Intel cũ): màn hình ảo 1x — màn hình ảo HiDPI cỡ 3000 px làm treo cả máy.
+        let hiDPI = hello.scale > 1.01 && !config.useCompat
+        if config.useCompat {
+            wsLog(tr("Chế độ tương thích máy cũ: màn hình ảo 1x, tối đa 30 fps, bộ nén thường",
+                     "Compatibility mode: 1x virtual display, up to 30 fps, standard encoder"))
+        }
         let refresh = Double(min(config.fps, max(hello.refreshRate, 30)))
 
         // Máy phụ nối lại ngay (mạng chập, chuyển sang cáp, đổi cài đặt) -> dùng lại màn hình ảo cũ,
@@ -250,6 +260,14 @@ final class Session {
             if reused == nil {
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 await MainActor.run { vs.selectMode() }
+            }
+            // macOS có thể đặt màn hình ảo ở chế độ phát trùng (Mirror) -> chuyển về mở rộng rồi chờ macOS sắp xếp lại
+            if await MainActor.run(body: { vs.ensureExtended() }) {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
+            if Diag.mode == 1 {
+                wsLog(tr("[Chẩn đoán 1] Chỉ tạo màn hình ảo, không quay/nén", "[Diagnostic 1] Virtual display only, no capture/encoding"))
+                return
             }
             do {
                 try await streamer.start()
